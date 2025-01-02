@@ -23,14 +23,14 @@ void
 encode_domain_name(char *dest, const char *domain)
 {
         const char *start = domain;
-        char *len_ptr = dest; // Apuntador al byte de longitud
+        char *len_ptr = dest;
         dest++;
 
         while (*domain)
         {
                 if (*domain == '.')
                 {
-                        *len_ptr = domain - start; // Longitud de la etiqueta
+                        *len_ptr = domain - start;
                         len_ptr = dest;
                         start = domain + 1;
                 }
@@ -41,8 +41,8 @@ encode_domain_name(char *dest, const char *domain)
                 dest++;
                 domain++;
         }
-        *len_ptr = domain - start; // Longitud de la última etiqueta
-        *dest++ = 0; // Final del nombre
+        *len_ptr = domain - start;
+        *dest++ = 0;
 }
 
 void
@@ -80,65 +80,169 @@ print_packet(const char *packet, size_t size, const char *direction)
         printf("\n");
 }
 
-void parse_dns_response(const char *packet, size_t size) {
-    DnsPackageHeader *header = (DnsPackageHeader *)packet;
+void
+parse_dns_response_short_https(const char *packet, size_t size)
+{
+        DnsPackageHeader *header = (DnsPackageHeader *) packet;
+        const char *ptr = packet + sizeof(DnsPackageHeader);
 
-    // Imprimir encabezado
-    printf("\n--- DNS RESPONSE ---\n");
-    printf("ID: 0x%04X\n", ntohs(header->id));
-    printf("Flags: 0x%04X\n", ntohs(header->flags));
-    printf("Questions: %d\n", ntohs(header->num_questions));
-    printf("Answers: %d\n", ntohs(header->num_answers));
-
-    // Saltar el encabezado
-    const char *ptr = packet + sizeof(DnsPackageHeader);
-
-    // Saltar sección de preguntas
-    for (int i = 0; i < ntohs(header->num_questions); i++) {
-        while (*ptr != 0) { // Avanzar por el nombre codificado
-            ptr += *ptr + 1;
-        }
-        ptr += 5; // Saltar terminador del nombre (1 byte), tipo (2 bytes), clase (2 bytes)
-    }
-
-    // Procesar sección de respuestas
-    for (int i = 0; i < ntohs(header->num_answers); i++) {
-        // Nombre (puede ser un puntero)
-        if ((*ptr & 0xC0) == 0xC0) {
-            ptr += 2; // Saltar puntero
-        } else {
-            while (*ptr != 0) {
-                ptr += *ptr + 1;
-            }
-            ptr++;
+        for (int i = 0; i < ntohs(header->num_questions); i++)
+        {
+                while (*ptr != 0)
+                        ptr += *ptr + 1;
+                ptr += 5;
         }
 
-        uint16_t type = ntohs(*(uint16_t *)ptr);
-        ptr += 2; // Tipo
-        uint16_t class = ntohs(*(uint16_t *)ptr);
-        ptr += 2; // Clase
-        uint32_t ttl = ntohl(*(uint32_t *)ptr);
-        ptr += 4; // TTL
-        uint16_t data_len = ntohs(*(uint16_t *)ptr);
-        ptr += 2; // Longitud de datos
+        for (int i = 0; i < ntohs(header->num_answers); i++)
+        {
+                if ((*ptr & 0xC0) == 0xC0)
+                        ptr += 2;
+                else
+                {
+                        while (*ptr != 0)
+                                ptr += *ptr + 1;
+                        ptr++;
+                }
 
-        // Si es un registro A (IPv4)
-        if (type == 1 && class == 1 && data_len == 4) {
-            unsigned char ip[4];
-            memcpy(ip, ptr, 4);
-            printf("IPv4 Address: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+                uint16_t type = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Tipo
+                uint16_t class = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Clase
+                uint32_t ttl = ntohl(*(uint32_t *) ptr);
+                ptr += 4; // TTL
+                uint16_t data_len = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Longitud de datos
+
+                if (type == 1 && class == 1 && data_len == 4)
+                {
+                        unsigned char ip[4];
+                        memcpy(ip, ptr, 4);
+                        printf("https://%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+                }
+
+                ptr += data_len;
+        }
+}
+void
+parse_dns_response_short(const char *packet, size_t size)
+{
+        DnsPackageHeader *header = (DnsPackageHeader *) packet;
+        const char *ptr = packet + sizeof(DnsPackageHeader);
+
+        for (int i = 0; i < ntohs(header->num_questions); i++)
+        {
+                while (*ptr != 0)
+                        ptr += *ptr + 1;
+                ptr += 5;
         }
 
-        ptr += data_len; // Avanzar al siguiente registro
-    }
+        for (int i = 0; i < ntohs(header->num_answers); i++)
+        {
+                if ((*ptr & 0xC0) == 0xC0)
+                        ptr += 2;
+                else
+                {
+                        while (*ptr != 0)
+                                ptr += *ptr + 1;
+                        ptr++;
+                }
+
+                uint16_t type = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Tipo
+                uint16_t class = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Clase
+                uint32_t ttl = ntohl(*(uint32_t *) ptr);
+                ptr += 4; // TTL
+                uint16_t data_len = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Longitud de datos
+
+                if (type == 1 && class == 1 && data_len == 4)
+                {
+                        unsigned char ip[4];
+                        memcpy(ip, ptr, 4);
+                        printf("%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+                }
+
+                ptr += data_len;
+        }
+}
+void
+parse_dns_response(const char *packet, size_t size)
+{
+        DnsPackageHeader *header = (DnsPackageHeader *) packet;
+
+        printf("\n--- DNS RESPONSE ---\n");
+        printf("ID: 0x%04X\n", ntohs(header->id));
+        printf("Flags: 0x%04X\n", ntohs(header->flags));
+        printf("Questions: %d\n", ntohs(header->num_questions));
+        printf("Answers: %d\n", ntohs(header->num_answers));
+
+        const char *ptr = packet + sizeof(DnsPackageHeader);
+
+        for (int i = 0; i < ntohs(header->num_questions); i++)
+        {
+                while (*ptr != 0)
+                        ptr += *ptr + 1;
+                ptr += 5;
+        }
+
+        for (int i = 0; i < ntohs(header->num_answers); i++)
+        {
+                if ((*ptr & 0xC0) == 0xC0)
+                        ptr += 2;
+                else
+                {
+                        while (*ptr != 0)
+                                ptr += *ptr + 1;
+                        ptr++;
+                }
+
+                uint16_t type = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Tipo
+                uint16_t class = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Clase
+                uint32_t ttl = ntohl(*(uint32_t *) ptr);
+                ptr += 4; // TTL
+                uint16_t data_len = ntohs(*(uint16_t *) ptr);
+                ptr += 2; // Longitud de datos
+
+                if (type == 1 && class == 1 && data_len == 4)
+                {
+                        unsigned char ip[4];
+                        memcpy(ip, ptr, 4);
+                        printf("IPv4 Address: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+                }
+
+                ptr += data_len;
+        }
 }
 
 int
-main()
+main(int argc, char **argv)
 {
         int sock;
+        int opts = 0;
         struct sockaddr_in server;
         char buffer[512];
+
+        if (argc < 2 || argc > 3 || argv[1][0] == '-')
+        {
+                printf("Usage: %s <domain name> -[h|v]\n", argv[0]);
+                exit(1);
+        }
+
+        if (argc == 3 && argv[2][0] == '-')
+                for (char *c = argv[2] + 1; *c; ++c)
+                        switch (*c)
+                        {
+                        case 'h':
+                                opts |= 0x1;
+                                break;
+                        case 'v':
+                                opts |= 0x2;
+                                break;
+                        }
+
 
         // Crear el encabezado DNS
         DnsPackageHeader header = {
@@ -152,7 +256,7 @@ main()
 
         // Construir el paquete
         char domain_encoded[256];
-        encode_domain_name(domain_encoded, "www.google.com");
+        encode_domain_name(domain_encoded, argv[1]);
 
         uint16_t query_type = htons(1); // Tipo A (IPv4)
         uint16_t query_class = htons(1); // Clase IN (Internet)
@@ -190,7 +294,8 @@ main()
                 return 1;
         }
 
-        print_packet(buffer, packet_size, "SENT");
+        if (opts & 0x2)
+                print_packet(buffer, packet_size, "SENT");
 
         // Recibir la respuesta
         ssize_t received = recvfrom(sock, buffer, sizeof(buffer), 0, NULL, NULL);
@@ -201,8 +306,13 @@ main()
                 return 1;
         }
 
-        print_packet(buffer, received, "RECEIVED");
-        parse_dns_response(buffer, received);
+        if (opts & 0x2)
+                print_packet(buffer, received, "RECEIVED");
+
+        if (opts & 0x1)
+                parse_dns_response_short_https(buffer, received);
+        else
+                parse_dns_response_short(buffer, received);
 
         // Cerrar el socket
         close(sock);
